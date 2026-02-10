@@ -2,6 +2,8 @@
 Ride-Sharing Agent
 ──────────────────
 Compares Uber, Lyft, and local taxi services for the best ride prices.
+
+Integrates with LangChain for tool-based function calling.
 """
 
 from __future__ import annotations
@@ -11,12 +13,23 @@ import random
 from typing import Any
 
 import structlog
+from pydantic import BaseModel, Field
 
 from app.agents.base_agent import BaseAgent
 from app.models.enums import Platform
 from app.models.schemas import AgentMessage, PriceBreakdown, SearchResultItem
 
 logger = structlog.get_logger()
+
+
+# ── Tool Input Schema ────────────────────────────────────────────────────────
+
+class RideSearchInput(BaseModel):
+    """Input schema for ride-sharing search."""
+    query: str = Field(..., description="Destination or ride description")
+    origin: str | None = Field(None, description="Pickup location")
+    destination: str | None = Field(None, description="Drop-off location")
+    platforms: list[str] | None = Field(None, description="Specific platforms to search (uber, lyft, taxi)")
 
 
 # ── Simulated platform adapters ──────────────────────────────────────────────
@@ -96,7 +109,17 @@ PLATFORM_SEARCHERS = {
 
 
 class RideSharingAgent(BaseAgent):
-    name = "ride_sharing"
+    """Agent for searching ride-sharing platforms."""
+    
+    name = "ride_search"
+    description = "Search for rides across Uber, Lyft, and local taxi services. Use this when the user needs transportation or wants to compare ride prices."
+    tool_input_schema = RideSearchInput
+
+    async def execute(self, message: AgentMessage) -> list[SearchResultItem]:
+        """Execute search from AgentMessage."""
+        query = message.payload.get("query", "")
+        filters = message.payload.get("filters", {})
+        return await self.search(query, filters)
 
     async def process(self, message: AgentMessage) -> dict[str, Any]:
         query = message.payload.get("query", "")

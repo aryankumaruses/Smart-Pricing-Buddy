@@ -2,6 +2,8 @@
 E-Commerce Agent
 ────────────────
 Searches Amazon, eBay, Walmart, Target, Best Buy for products.
+
+Integrates with LangChain for tool-based function calling.
 """
 
 from __future__ import annotations
@@ -11,12 +13,22 @@ import random
 from typing import Any
 
 import structlog
+from pydantic import BaseModel, Field
 
 from app.agents.base_agent import BaseAgent
 from app.models.enums import Platform
 from app.models.schemas import AgentMessage, PriceBreakdown, SearchResultItem
 
 logger = structlog.get_logger()
+
+
+# ── Tool Input Schema ────────────────────────────────────────────────────────
+
+class ECommerceSearchInput(BaseModel):
+    """Input schema for e-commerce product search."""
+    query: str = Field(..., description="Product name or search terms")
+    budget_max: float | None = Field(None, description="Maximum budget for the product")
+    platforms: list[str] | None = Field(None, description="Specific platforms to search (amazon, ebay, walmart, target, bestbuy)")
 
 
 # ── Simulated platform adapters ──────────────────────────────────────────────
@@ -143,7 +155,17 @@ PLATFORM_SEARCHERS = {
 
 
 class ECommerceAgent(BaseAgent):
-    name = "ecommerce"
+    """Agent for searching e-commerce platforms."""
+    
+    name = "ecommerce_search"
+    description = "Search for products across Amazon, eBay, Walmart, Target, and Best Buy. Use this when the user wants to buy a product or compare prices across online stores."
+    tool_input_schema = ECommerceSearchInput
+
+    async def execute(self, message: AgentMessage) -> list[SearchResultItem]:
+        """Execute search from AgentMessage."""
+        query = message.payload.get("query", "")
+        filters = message.payload.get("filters", {})
+        return await self.search(query, filters)
 
     async def process(self, message: AgentMessage) -> dict[str, Any]:
         query = message.payload.get("query", "")

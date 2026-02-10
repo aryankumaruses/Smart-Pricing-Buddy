@@ -2,6 +2,8 @@
 Hotel & Accommodation Agent
 ────────────────────────────
 Searches Booking.com, Expedia, Airbnb, Hotels.com, Vrbo.
+
+Integrates with LangChain for tool-based function calling.
 """
 
 from __future__ import annotations
@@ -11,12 +13,23 @@ import random
 from typing import Any
 
 import structlog
+from pydantic import BaseModel, Field
 
 from app.agents.base_agent import BaseAgent
 from app.models.enums import Platform
 from app.models.schemas import AgentMessage, PriceBreakdown, SearchResultItem
 
 logger = structlog.get_logger()
+
+
+# ── Tool Input Schema ────────────────────────────────────────────────────────
+
+class HotelSearchInput(BaseModel):
+    """Input schema for hotel/accommodation search."""
+    query: str = Field(..., description="Destination city, hotel name, or search terms")
+    nights: int = Field(default=1, description="Number of nights to stay")
+    budget_max: float | None = Field(None, description="Maximum budget for the stay")
+    platforms: list[str] | None = Field(None, description="Specific platforms to search (booking, expedia, airbnb, hotels_com, vrbo)")
 
 
 # ── Simulated platform adapters ──────────────────────────────────────────────
@@ -164,7 +177,17 @@ PLATFORM_SEARCHERS = {
 
 
 class HotelAgent(BaseAgent):
-    name = "hotel"
+    """Agent for searching hotel and accommodation platforms."""
+    
+    name = "hotel_search"
+    description = "Search for hotels and accommodations across Booking.com, Expedia, Airbnb, Hotels.com, and Vrbo. Use this when the user wants to book a hotel or compare accommodation prices."
+    tool_input_schema = HotelSearchInput
+
+    async def execute(self, message: AgentMessage) -> list[SearchResultItem]:
+        """Execute search from AgentMessage."""
+        query = message.payload.get("query", "")
+        filters = message.payload.get("filters", {})
+        return await self.search(query, filters)
 
     async def process(self, message: AgentMessage) -> dict[str, Any]:
         query = message.payload.get("query", "")

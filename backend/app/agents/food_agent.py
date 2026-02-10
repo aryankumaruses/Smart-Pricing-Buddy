@@ -2,6 +2,8 @@
 Food Delivery Agent
 ───────────────────
 Searches Uber Eats, DoorDash, Grubhub, Postmates for the best food deals.
+
+Integrates with LangChain for tool-based function calling.
 """
 
 from __future__ import annotations
@@ -12,12 +14,23 @@ from datetime import datetime
 from typing import Any
 
 import structlog
+from pydantic import BaseModel, Field
 
 from app.agents.base_agent import BaseAgent
 from app.models.enums import Platform
 from app.models.schemas import AgentMessage, PriceBreakdown, SearchResultItem
 
 logger = structlog.get_logger()
+
+
+# ── Tool Input Schema ────────────────────────────────────────────────────────
+
+class FoodSearchInput(BaseModel):
+    """Input schema for food delivery search."""
+    query: str = Field(..., description="Food item or restaurant to search for")
+    location: str | None = Field(None, description="Delivery location/address")
+    platforms: list[str] | None = Field(None, description="Specific platforms to search (uber_eats, doordash, grubhub, postmates)")
+    budget_max: float | None = Field(None, description="Maximum budget for the order")
 
 # ── Simulated platform adapters (swap for real API calls) ────────────────────
 
@@ -123,7 +136,17 @@ PLATFORM_SEARCHERS = {
 
 
 class FoodDeliveryAgent(BaseAgent):
-    name = "food_delivery"
+    """Agent for searching food delivery platforms."""
+    
+    name = "food_search"
+    description = "Search for food delivery options across Uber Eats, DoorDash, Grubhub, and Postmates. Use this when the user wants to order food or compare food delivery prices."
+    tool_input_schema = FoodSearchInput
+
+    async def execute(self, message: AgentMessage) -> list[SearchResultItem]:
+        """Execute search from AgentMessage."""
+        query = message.payload.get("query", "")
+        filters = message.payload.get("filters", {})
+        return await self.search(query, filters)
 
     async def process(self, message: AgentMessage) -> dict[str, Any]:
         query = message.payload.get("query", "")

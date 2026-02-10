@@ -3,6 +3,8 @@ User Profile Agent
 ──────────────────
 Manages user preferences, budget constraints, loyalty memberships.
 Learns from past searches and personalises results.
+
+Integrates with LangChain for tool-based function calling.
 """
 
 from __future__ import annotations
@@ -10,18 +12,35 @@ from __future__ import annotations
 from typing import Any
 
 import structlog
+from pydantic import BaseModel, Field
 
 from app.agents.base_agent import BaseAgent
 from app.models.schemas import AgentMessage, SearchResultItem
 
 logger = structlog.get_logger()
 
+
+# ── Tool Input Schema ────────────────────────────────────────────────────────
+
+class UserPreferencesInput(BaseModel):
+    """Input schema for getting user preferences."""
+    user_id: str = Field(..., description="User ID to get preferences for")
+
+
 # In-memory store for demo; swap with DB in production
 _PROFILES: dict[str, dict[str, Any]] = {}
 
 
 class UserProfileAgent(BaseAgent):
+    """Agent for managing user profiles and preferences."""
+    
     name = "user_profile"
+    description = "Get or update user preferences, budget constraints, and loyalty memberships. Use this to personalize search results."
+    tool_input_schema = UserPreferencesInput
+
+    async def execute(self, message: AgentMessage) -> list[SearchResultItem]:
+        """Execute action from AgentMessage."""
+        return []  # Profile agent doesn't return search results
 
     async def process(self, message: AgentMessage) -> dict[str, Any]:
         action = message.action

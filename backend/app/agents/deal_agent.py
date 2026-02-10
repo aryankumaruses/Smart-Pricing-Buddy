@@ -3,6 +3,8 @@ Deal Finder Agent
 ─────────────────
 Monitors promo codes, cashback offers, credit-card rewards, seasonal sales,
 and applies them to search results.
+
+Integrates with LangChain for tool-based function calling.
 """
 
 from __future__ import annotations
@@ -13,12 +15,21 @@ from typing import Any
 import uuid
 
 import structlog
+from pydantic import BaseModel, Field
 
 from app.agents.base_agent import BaseAgent
 from app.models.enums import DealType, Platform, SearchCategory
 from app.models.schemas import AgentMessage, DealRead, SearchResultItem
 
 logger = structlog.get_logger()
+
+
+# ── Tool Input Schema ────────────────────────────────────────────────────────
+
+class DealSearchInput(BaseModel):
+    """Input schema for deal search."""
+    category: str = Field(..., description="Search category (food, product, ride, hotel)")
+    platforms: list[str] | None = Field(None, description="Specific platforms to find deals for")
 
 # ── Simulated deals database ────────────────────────────────────────────────
 
@@ -115,7 +126,15 @@ _PLATFORM_CATEGORY: dict[Platform, SearchCategory] = {
 
 
 class DealFinderAgent(BaseAgent):
-    name = "deal_finder"
+    """Agent for finding deals and promo codes."""
+    
+    name = "deal_search"
+    description = "Search for deals, promo codes, cashback offers, and discounts. Use this to find ways to save money on purchases."
+    tool_input_schema = DealSearchInput
+
+    async def execute(self, message: AgentMessage) -> list[SearchResultItem]:
+        """Execute search from AgentMessage."""
+        return []  # Deals don't return SearchResultItems directly
 
     async def process(self, message: AgentMessage) -> dict[str, Any]:
         category = SearchCategory(message.payload.get("category", "food"))

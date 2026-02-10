@@ -1,85 +1,29 @@
-""""""Abstract base class for all specialized agents."""
+"""
+Abstract base class for all specialized agents.
 
+This class defines the contract for all agents in the system. Each specialized 
+agent inherits from this base class and implements its own platform-specific logic.
 
+Integrates with LangChain tools for function calling and LangGraph for orchestration.
 
+Methods:
+- handle: Receive a message, process it, and return a response message.
+- execute: Core logic to be implemented by subclasses.
+- as_tool: Returns a LangChain Tool for the agent.
 
+"""
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        return uuid.uuid4()    def _result_id() -> uuid.UUID:    @staticmethod    # ── helpers ──────────────────────────────────────────────────────        ...        """Execute a platform search and return normalised results."""    async def search(self, query: str, filters: dict[str, Any] | None = None) -> list[SearchResultItem]:    @abc.abstractmethod        ...        """Core logic – implemented per agent."""    async def process(self, message: AgentMessage) -> dict[str, Any]:    @abc.abstractmethod    # ── to be implemented by subclasses ──────────────────────────────            )                correlation_id=message.correlation_id,                context=message.context,                payload={"error": str(exc)},                action=f"{message.action}.error",                agent_to=message.agent_from,                agent_from=self.name,            return AgentMessage(            log.error("agent.handle.error", error=str(exc))        except Exception as exc:            )                correlation_id=message.correlation_id,                context=message.context,                payload=result,                action=f"{message.action}.response",                agent_to=message.agent_from,                agent_from=self.name,            return AgentMessage(            log.info("agent.handle.done", elapsed_ms=elapsed_ms)            elapsed_ms = int((time.monotonic() - start) * 1000)            result = await self.process(message)        try:        log.info("agent.handle.start")        log = logger.bind(agent=self.name, action=message.action, cid=str(message.correlation_id))        start = time.monotonic()        """Receive a message, process it, and return a response message."""    async def handle(self, message: AgentMessage) -> AgentMessage:    # ── public interface ─────────────────────────────────────────────    name: str = "base"    """Abstract base for every Smart Dealer agent."""class BaseAgent(abc.ABC):logger = structlog.get_logger()from app.models.schemas import AgentMessage, SearchResultItemimport structlogfrom typing import Anyimport uuidimport timeimport abcfrom __future__ import annotations"""Base agent contract.  Every specialised agent inherits from this class.
 from __future__ import annotations
 
 import abc
 import asyncio
 import uuid
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Callable, Optional, Type
 
 import structlog
+from langchain_core.tools import BaseTool, StructuredTool
+from pydantic import BaseModel, Field
 
 from app.models.schemas import AgentMessage, SearchResultItem
 
@@ -87,10 +31,16 @@ logger = structlog.get_logger()
 
 
 class BaseAgent(abc.ABC):
-    """Every agent in the system inherits from this base."""
+    """Every agent in the system inherits from this base.
+    
+    Provides integration with LangChain tools for function calling.
+    """
 
     name: str = "base_agent"
-    description: str = ""
+    description: str = "Base agent - override in subclass"
+    
+    # Override in subclass to specify the input schema for the tool
+    tool_input_schema: Type[BaseModel] | None = None
 
     def __init__(self) -> None:
         self.agent_id = str(uuid.uuid4())
@@ -103,7 +53,7 @@ class BaseAgent(abc.ABC):
         start = datetime.utcnow()
         try:
             results = await self.execute(message)
-            elapsed = (datetime.utcnow() - start).total_seconds()
+            elapsed = (datetime.now() - start).total_seconds()
             self.log.info("completed", results=len(results), elapsed_s=round(elapsed, 2))
             return results
         except Exception as exc:
@@ -115,6 +65,34 @@ class BaseAgent(abc.ABC):
         """Subclasses implement platform-specific logic here."""
         ...
 
+    @abc.abstractmethod
+    async def search(self, query: str, filters: dict[str, Any] | None = None) -> list[SearchResultItem]:
+        """Execute a search with the given query and filters."""
+        ...
+
+    # ── LangChain Tool Integration ───────────────────────
+    def as_tool(self) -> BaseTool:
+        """Return this agent as a LangChain Tool for function calling."""
+        
+        async def _run_async(**kwargs: Any) -> list[dict]:
+            """Async execution wrapper."""
+            query = kwargs.pop("query", "")
+            filters = kwargs  # remaining kwargs become filters
+            results = await self.search(query, filters)
+            return [r.model_dump(mode="json") for r in results]
+        
+        def _run_sync(**kwargs: Any) -> list[dict]:
+            """Sync execution wrapper."""
+            return asyncio.get_event_loop().run_until_complete(_run_async(**kwargs))
+        
+        return StructuredTool(
+            name=self.name,
+            description=self.description,
+            func=_run_sync,
+            coroutine=_run_async,
+            args_schema=self.tool_input_schema,
+        )
+
     # ── Helpers ──────────────────────────────────────────
     def _build_message(self, to: str, action: str, payload: dict, context: dict | None = None) -> AgentMessage:
         return AgentMessage(
@@ -124,3 +102,4 @@ class BaseAgent(abc.ABC):
             payload=payload,
             context=context or {},
         )
+
